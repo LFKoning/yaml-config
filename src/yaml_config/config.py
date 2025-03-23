@@ -2,6 +2,8 @@
 
 import logging
 import warnings
+
+from copy import deepcopy
 from typing import Any, Dict, Union
 
 import yaml  # type: ignore
@@ -60,10 +62,14 @@ class Config:
         if isinstance(defaults, str):
             defaults = self._load(defaults)
 
-        if defaults:
+        if defaults and config:
             self._config = self._override_defaults(defaults, config)
+        elif defaults:
+            self._config = deepcopy(defaults)
+        elif config:
+            self._config = deepcopy(config)
         else:
-            self._config = config
+            raise ValueError("No configuration or default configuration supplied.")
 
     def _load(self, config_path: str) -> Dict[str, Any]:
         """
@@ -113,20 +119,30 @@ class Config:
         Returns
         -------
         dict
-            Dict with combined configuration values.
+            Dict with updated configuration values.
         """
 
-        for key in config:
-            if (
-                key in defaults
-                and isinstance(defaults[key], dict)
-                and isinstance(config[key], dict)
-            ):
-                self._override_defaults(defaults[key], config[key])
-            else:
-                defaults[key] = config[key]
+        merged_keys = set(defaults) | set(config)
+        combined = {}
+        for key in merged_keys:
+            # Appears in both, combine values
+            if key in config and key in defaults:
+                # Merge nested configuration
+                if isinstance(defaults[key], dict) and isinstance(config, dict):
+                    combined[key] = self._override_defaults(defaults[key], config[key])
+                # Or copy scalar value
+                else:
+                    combined[key] = deepcopy(config[key])
 
-        return defaults
+            # Only in config
+            elif key in config:
+                combined[key] = deepcopy(config[key])
+
+            # Only in defaults
+            else:
+                combined[key] = deepcopy(defaults[key])
+
+        return combined
 
     def _check_key(self, section: Dict[str, Any], key: str, not_found: str) -> bool:
         """
